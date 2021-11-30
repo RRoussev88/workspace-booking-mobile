@@ -1,76 +1,100 @@
-import React, { FC, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../models';
+import { Button, Card, Divider, Input, Text, TopNavigation } from '@ui-kitten/components';
+import React, { FC, useContext, useState } from 'react';
+import { SafeAreaView, StyleSheet } from 'react-native';
+import { AuthContext } from '../authContext';
+import { AuthToken, CoworkerPayload, RootStackParamList } from '../models';
+import { styleConstants } from '../utils';
 
 const styles = StyleSheet.create({
   container: {
+    alignSelf: 'center',
     width: '100%',
     maxWidth: 320,
-    marginHorizontal: 'auto',
-    marginVertical: 15,
-    padding: 15,
-    backgroundColor: 'rgba(243, 244, 246, 1)',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.1)',
+    marginVertical: 30,
+    backgroundColor: styleConstants.backgroundColor,
     borderRadius: 15,
     elevation: 3,
   },
-  inputView: { backgroundColor: '#FFF', borderRadius: 15, height: 45, marginTop: 20, elevation: 3 },
-  TextInput: { height: 50, flex: 1, padding: 10, marginLeft: 10 },
-  heading: { color: 'rgba(75, 85, 99, 1)', fontSize: 24, fontWeight: 'bold', alignSelf: 'center' },
-  button: {
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 15,
-    elevation: 3,
-    backgroundColor: '#3182CE',
-    marginTop: 20,
-    opacity: 0.5,
-  },
-  buttonText: { color: '#FFF' },
+  heading: { color: styleConstants.textColor, fontWeight: 'bold', textAlign: 'center' },
+  textInput: { backgroundColor: '#FFF', borderRadius: 15, height: 45, marginTop: 20 },
+  button: { borderRadius: 15, marginTop: 40 },
 });
 
 type LoginProps = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
 export const Login: FC<LoginProps> = ({ navigation }) => {
+  const auth = useContext(AuthContext);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [username, setUsername] = useState<string>('');
   const [password, setPassword] = useState<string>('');
 
-  const submitDisabled = !username || !password;
+  const handleSubmit = () => {
+    auth.onLogout();
+    fetch('https://2831-87-246-31-148.ngrok.io/auth/signin', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    })
+      .then<{ token?: AuthToken; payload?: CoworkerPayload; errors?: string[] }>((raw) => raw.json())
+      .then((data) => {
+        if (data.token && data.payload) {
+          setUsername('');
+          setPassword('');
+        }
+        if (data.errors?.length) {
+          setLoginError('Incorrect credentials');
+        }
+        return data;
+      })
+      // Call to `auth.onLogin` is extracted in separate promise in order to avoid unmounted component state change
+      .then((data) => {
+        if (data.token && data.payload) {
+          auth.onLogin(
+            { ...data.token, ExpiresIn: new Date().valueOf() + data.token.ExpiresIn * 1000 },
+            data.payload,
+          );
+          navigation.navigate('Organizations');
+        }
+      })
+      .catch((error: Error) => {
+        setLoginError(error?.message ?? 'Something went wrong');
+      });
+  };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.heading}>Sign In</Text>
-      <View style={styles.inputView}>
-        <TextInput
-          style={styles.TextInput}
-          placeholder="Username"
-          placeholderTextColor="rgba(75, 85, 99, 1)"
+    <SafeAreaView style={{ flex: 1 }}>
+      <TopNavigation />
+      <Divider />
+      <Card style={styles.container}>
+        <Text style={styles.heading} category="h2">
+          Sign In
+        </Text>
+        <Input
+          style={styles.textInput}
+          label="Username"
+          placeholder="Enter Username"
           onChangeText={setUsername}
           value={username}
         />
-      </View>
-      <View style={styles.inputView}>
-        <TextInput
-          style={styles.TextInput}
-          placeholder="Password"
-          placeholderTextColor="rgba(75, 85, 99, 1)"
+        <Input
+          style={styles.textInput}
+          label="Password"
+          placeholder="Enter Password"
           secureTextEntry={true}
           onChangeText={setPassword}
           value={password}
         />
-      </View>
-      <Pressable
-        disabled={submitDisabled}
-        style={{ ...styles.button, opacity: submitDisabled ? 0.4 : 1 }}
-        onPress={() => {
-          console.log(username, password);
-          navigation.navigate('Organizations');
-        }}
-      >
-        <Text style={styles.buttonText}>Sign In</Text>
-      </Pressable>
-    </View>
+        <Button
+          status="primary"
+          appearance="filled"
+          disabled={!username || !password}
+          style={styles.button}
+          onPress={handleSubmit}
+        >
+          Sign In
+        </Button>
+      </Card>
+    </SafeAreaView>
   );
 };
